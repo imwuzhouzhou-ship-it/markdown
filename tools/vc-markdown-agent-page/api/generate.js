@@ -55,39 +55,66 @@ Skill:
 ${text}`;
 }
 
+function truncateText(text, maxLen) {
+  const s = String(text ?? "");
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, maxLen)}...(truncated)`;
+}
+
 async function requestModel({ endpoint, apiKey, model, prompt }) {
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: createSkillPrompt(skillText) },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.2,
-      stream: false,
-    }),
-  });
-
-  const text = await response.text();
-  let data;
-
+  let response;
   try {
-    data = JSON.parse(text);
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: createSkillPrompt(skillText) },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+        stream: false,
+      }),
+    });
+  } catch (err) {
+    // Vercel logs sometimes don't show; return a structured error for debugging via Network response.
+    const e = new Error("上游接口请求失败（fetch failed）");
+    e.kind = "FETCH_FAILED";
+    e.detail = {
+      name: err?.name,
+      code: err?.code,
+      message: err?.message,
+      cause: err?.cause ? String(err.cause) : undefined,
+    };
+    throw e;
+  }
+
+  const rawText = await response.text();
+  let data;
+  try {
+    data = JSON.parse(rawText);
   } catch {
-    data = { raw: text };
+    data = { raw: rawText };
   }
 
   if (!response.ok) {
     const message =
       (data && data.error && data.error.message) ||
       (data && data.message) ||
-      `请求失败 (${response.status})`;
-    throw new Error(message);
+      `上游接口返回错误 (${response.status})`;
+    const e = new Error(message);
+    e.kind = "UPSTREAM_NOT_OK";
+    e.detail = {
+      status: response.status,
+      statusText: response.statusText,
+      endpoint,
+      bodySnippet: truncateText(rawText, 1200),
+    };
+    throw e;
   }
 
   return data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? "";
@@ -143,6 +170,10 @@ module.exports = async (req, res) => {
       },
     });
   } catch (error) {
-    json(res, 500, { error: error?.message || "生成失败" });
+    json(res, 500, {
+      error: error?.message || "生成失败",
+      kind: error?.kind,
+      detail: error?.detail,
+    });
   }
 };
