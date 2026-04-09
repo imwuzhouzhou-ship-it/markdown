@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VC-Markdown Style Guide</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/marked@4.3.0/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+        :root {
+            --font-main: "ui-sans-serif", "-apple-system", "system-ui", "Segoe UI", "Helvetica", "Apple Color Emoji", "Arial", "sans-serif", "Segoe UI Emoji", "Segoe UI Symbol";
+            --font-mono: 'JetBrains Mono', 'SF Mono', 'Roboto Mono', monospace;
+        }
+        body { 
+            font-family: var(--font-main); 
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+        .mono { font-family: var(--font-mono); }
+        .preview-container {
+            transition: all 0.2s ease-in-out;
+        }
+        .reference-item {
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+        .reference-item:hover .reference-title {
+            color: #1456d9 !important;
+        }
+        .image-frame-hover .image-action-wrap {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .image-frame-hover:hover .image-action-wrap {
+            opacity: 1;
+        }
+    </style>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="bg-white text-slate-900 overflow-hidden h-screen">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        function App() {
+            const [activeCaseId, setActiveCaseId] = useState('long-text');
+            // State for configuration
+            const [promptInput, setPromptInput] = useState('');
+            const [submittedPrompt, setSubmittedPrompt] = useState('请在此输入 Prompt 并发送...');
+            const [aiResult, setAiResult] = useState('');
+            const [isGenerating, setIsGenerating] = useState(false);
+
+            const handleGenerate = async (e) => {
+                if (e) e.preventDefault();
+                if (!promptInput.trim() || isGenerating) return;
+                
+                const currentPrompt = promptInput.trim();
+                setPromptInput('');
+                setSubmittedPrompt(currentPrompt);
+                setIsGenerating(true);
+                setAiResult('正在思考中...');
+                setActiveCaseId('ai-generator');
+
+                try {
+                    const res = await fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: currentPrompt })
+                    });
+                    const data = await res.json();
+                    if (data.result) {
+                        setAiResult(data.result);
+                    } else {
+                        setAiResult('生成失败：' + (data.error || '未知错误'));
+                    }
+                } catch (err) {
+                    setAiResult('请求失败：' + err.message);
+                } finally {
+                    setIsGenerating(false);
+                }
+            };
+
+            const [config, setConfig] = useState({
+                baseSize: 16,
+                lineHeightRatio: 1.625,
+                h1Ratio: 1.375,
+                h2Ratio: 1.25,
+                h3Ratio: 1.125,
+                h46Ratio: 1.0,
+                hLineHeight: 1.5,
+                spacingRatio: 0.5, // rem
+                primaryColor: '#1456d9',
+                foreground: '#1f1f1f',
+                mutedForeground: '#5b5f66',
+                borderColor: '#dde2ea',
+                surfaceMuted: '#f5f7fa',
+                scenario: 'chat' // chat, drawer, ide
+            });
+
+            // Automatically adjust baseSize based on scenario
+            useEffect(() => {
+                if (config.scenario === 'ide') setConfig(prev => ({ ...prev, baseSize: 12 }));
+                else if (config.scenario === 'drawer') setConfig(prev => ({ ...prev, baseSize: 14 }));
+                else setConfig(prev => ({ ...prev, baseSize: 16 }));
+            }, [config.scenario]);
+
+            const handleChange = (e) => {
+                const { name, value, type } = e.target;
+                setConfig(prev => ({
+                    ...prev,
+                    [name]: type === 'range' || type === 'number' ? parseFloat(value) : value
+                }));
+            };
+
+            // Calculated styles for preview
+            const styles = useMemo(() => {
+                const base = config.baseSize;
+                return {
+                    root: { fontSize: `${base}px` },
+                    h1: { fontSize: `${base * 1.375}px`, lineHeight: `${base * 1.375 * 1.5}px`, fontWeight: 600, marginBottom: `${base * 0.5}px`, marginTop: `${base * 1.03125}px` },
+                    h2: { fontSize: `${base * 1.25}px`, lineHeight: `${base * 1.25 * 1.5}px`, fontWeight: 600, marginBottom: `${base * 0.5}px`, marginTop: `${base * 0.9375}px` },
+                    h3: { fontSize: `${base * 1.125}px`, lineHeight: `${base * 1.125 * 1.5}px`, fontWeight: 600, marginBottom: `${base * 0.5}px`, marginTop: `${base * 0.84375}px` },
+                    h4: { fontSize: `${base * 1.0}px`, lineHeight: `${base * 1.0 * 1.5}px`, fontWeight: 600, marginBottom: `${base * 0.5}px`, marginTop: `${base * 0.75}px` },
+                    p: { fontSize: `${base}px`, lineHeight: `${base * 1.625}px`, marginBottom: `${base * 0.5}px`, color: config.foreground, fontWeight: 400 },
+                    muted: { color: config.mutedForeground },
+                    userBubble: { 
+                        backgroundColor: config.surfaceMuted, 
+                        color: config.foreground,
+                        padding: '10px 16px',
+                        borderRadius: '16px',
+                        borderTopRightRadius: '4px',
+                        fontSize: '15px',
+                        lineHeight: '24px',
+                        maxWidth: '80%',
+                        alignSelf: 'flex-end',
+                        marginBottom: '24px'
+                    },
+                    link: { color: config.primaryColor, textDecoration: 'none' },
+                    divider: { margin: `${base * 1.0}px 0`, borderTop: `1px solid ${config.borderColor}` },
+                    card: { border: `1px solid ${config.borderColor}`, borderRadius: '12px', padding: '24px', backgroundColor: '#fff' },
+                    inlineCode: { fontFamily: 'var(--font-mono)', fontSize: '13px', lineHeight: '20px', padding: '2px 5px', borderRadius: '4px', backgroundColor: config.surfaceMuted, border: `1px solid ${config.borderColor}` },
+                    codeBlockWrap: { width: '100%', paddingTop: '8px', paddingBottom: '8px' },
+                    codeBlockInner: { backgroundColor: '#fcfdfe', border: `1px solid #eaedf1`, borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+                    codeBlockHeader: { height: '40px', backgroundColor: '#f6f8fa', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #eaedf1' },
+                    codeBlockHeaderLang: { fontFamily: 'var(--font-main)', fontSize: '14px', color: '#0c0d0e' },
+                    codeBlockHeaderIcons: { display: 'flex', gap: '8px', alignItems: 'center' },
+                    codeBlockContentWrap: { display: 'flex', gap: '32px', padding: '8px 16px 8px', alignItems: 'flex-start', margin: 0 },
+                    codeBlockLines: { width: '20px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '14px', lineHeight: '24px', color: '#a0a2a7', flexShrink: 0 },
+                    codeBlockCode: { flexGrow: 1, fontFamily: 'var(--font-mono)', fontSize: '14px', lineHeight: '24px', color: '#0c0d0e', overflowX: 'auto', whiteSpace: 'pre', margin: 0 },
+                    
+                    blockquoteWrap: { display: 'flex', alignItems: 'flex-start', paddingBottom: '8px' },
+                    blockquoteBorder: { width: '3px', alignSelf: 'stretch', backgroundColor: '#eaedf1', flexShrink: 0 },
+                    blockquoteContent: { paddingLeft: '16px', fontFamily: 'var(--font-main)', color: '#0c0d0e', fontSize: '16px', lineHeight: '26px' },
+                    
+                    listItemWrap: { display: 'flex', paddingLeft: '8px', paddingBottom: '8px' },
+                    ulDot: { width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#9e9e9e', marginTop: '10px', marginRight: '12px', flexShrink: 0 },
+                    olNumber: { color: config.mutedForeground, marginRight: '8px', fontVariantNumeric: 'tabular-nums' },
+                    tableWrap: { width: '100%', paddingTop: '8px', paddingBottom: '8px' },
+                    tableInner: { borderRadius: '12px', border: `1px solid #eaedf1`, overflowX: 'auto', overflowY: 'auto', display: 'flex', flexDirection: 'column', maxHeight: '386px', backgroundColor: '#fff' },
+                    tableHeaderRow: { display: 'flex', height: '40px', flexShrink: 0, alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f6f8fa', padding: '0 16px', position: 'sticky', top: 0, zIndex: 20 },
+                    tableTitle: { fontFamily: 'var(--font-main)', fontSize: '14px', fontWeight: 500, color: '#0c0d0e' },
+                    tableHeaderIconWrap: { display: 'inline-flex', padding: '2px', borderRadius: '4px' },
+                    table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left', position: 'relative', backgroundColor: '#fff' },
+                    th: { padding: '15px 16px', fontWeight: 500, fontSize: '14px', lineHeight: '18px', color: '#0c0d0e', borderBottom: `1px solid #eaedf1`, backgroundColor: '#fff', position: 'sticky', top: '40px', zIndex: 10 },
+                    td: { padding: '14px 16px', borderBottom: `1px solid #eaedf1`, fontSize: '14px', lineHeight: '20px', color: '#0c0d0e', backgroundColor: '#fff' },
+                    citationBadge: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', borderRadius: '22px', backgroundColor: '#f1f3f5', color: '#737a87', fontFamily: 'var(--font-main)', fontSize: '11px', fontWeight: 500, verticalAlign: 'middle', marginLeft: '4px', position: 'relative', top: '-1px', flexShrink: 0 },
+                    referenceItemWrap: { display: 'inline-flex', alignItems: 'center', gap: '12px', padding: '6px 0', verticalAlign: 'middle' },
+                    referenceItemTitle: { fontFamily: 'var(--font-main)', fontSize: '14px', lineHeight: '22px', color: '#0c0d0e', flexShrink: 0 },
+                    referenceItemDate: { fontFamily: 'var(--font-main)', fontSize: '12px', lineHeight: '16px', color: '#737a87', flexShrink: 0 },
+                    
+                    imageWrap: { display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', paddingBottom: '8px', alignItems: 'flex-start' },
+                    imageGrid: { display: 'grid', gap: '12px', width: '100%' },
+                    imageFrame: { position: 'relative', borderRadius: '12px', backgroundColor: config.surfaceMuted, border: `1px solid #eaedf1`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', aspectRatio: '1 / 1' },
+                    imageActionWrap: { position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '4px' },
+                    imageActionBtn: { width: '28px', height: '28px', borderRadius: '6px', backgroundColor: 'rgba(0, 0, 0, 0.4)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)', cursor: 'pointer', border: 'none' },
+                    imageCaption: { fontFamily: 'var(--font-main)', fontSize: '13px', lineHeight: '18px', color: config.mutedForeground, textAlign: 'center', alignSelf: 'stretch' }
+                };
+            }, [config]);
+
+            
+
+            
+            const cssVariables = {
+                '--md-foreground': config.foreground,
+                '--md-p-size': styles.p.fontSize,
+                '--md-p-line-height': styles.p.lineHeight,
+                '--md-p-margin-bottom': styles.p.marginBottom,
+                '--md-h1-size': styles.h1.fontSize,
+                '--md-h1-line-height': styles.h1.lineHeight,
+                '--md-h1-weight': styles.h1.fontWeight,
+                '--md-h1-margin-bottom': styles.h1.marginBottom,
+                '--md-h1-margin-top': styles.h1.marginTop,
+                '--md-h2-size': styles.h2.fontSize,
+                '--md-h2-line-height': styles.h2.lineHeight,
+                '--md-h2-weight': styles.h2.fontWeight,
+                '--md-h2-margin-bottom': styles.h2.marginBottom,
+                '--md-h2-margin-top': styles.h2.marginTop,
+                '--md-h3-size': styles.h3.fontSize,
+                '--md-h3-line-height': styles.h3.lineHeight,
+                '--md-h3-weight': styles.h3.fontWeight,
+                '--md-h3-margin-bottom': styles.h3.marginBottom,
+                '--md-h3-margin-top': styles.h3.marginTop,
+                '--md-h4-size': styles.h4.fontSize,
+                '--md-h4-line-height': styles.h4.lineHeight,
+                '--md-h4-weight': styles.h4.fontWeight,
+                '--md-h4-margin-bottom': styles.h4.marginBottom,
+                '--md-h4-margin-top': styles.h4.marginTop,
+                '--md-surface-muted': config.surfaceMuted,
+                '--md-border-color': config.borderColor,
+                '--md-primary-color': config.primaryColor
+            };
+
+            const testCases = [
+
+                {
+                    id: 'ai-generator',
+                    name: '🤖 AI 实时生成',
+                    query: submittedPrompt,
+                    render: () => (
+                        <>
+                            
+                            {aiResult ? (
+                                <div className="markdown-body" dangerouslySetInnerHTML={{ __html: typeof window.marked !== 'undefined' ? (window.marked.parse ? window.marked.parse(aiResult) : (typeof window.marked === 'function' ? window.marked(aiResult) : String(aiResult))) : '<pre style="white-space: pre-wrap; font-family: var(--font-main);">' + String(aiResult).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>' }} />
+                            ) : (
+                                <p className="md-text-p">在下方输入 Prompt，点击发送后，生成的结果将在这里展示。</p>
+                            )}
+                        </>
+                    )
+                },
+                {
+                    id: 'long-text',
+                    name: '长文与多级标题',
+                    query: '《红楼梦》里的诗社活动如何映射不同人物的性格与处境？',
+                    render: () => (
+                        <>
+                            <p className="md-text-p">
+                                没问题，这次我为你准备了一份内容更详实、段落篇幅更长的马年新春生活指南。文档保持了多层级结构，同时正文内容充实，适合作为收藏或参考。
+                            </p>
+                            <h1 className="md-text-h1">马年新春生活与效率提升指南</h1>
+                            
+                            <h2 className="md-text-h2">一、新春开篇：龙马精神，开局稳进</h2>
+                            
+                            <h3 className="md-text-h3">1.1 节日氛围与生活仪式感</h3>
+                            <p className="md-text-p">
+                                丙午马年新春将至，街头巷尾的红灯笼与窗花已悄然点亮，营造出浓郁的年味儿。对于身处北京的家庭而言，春节不仅是团圆的时刻，更是整理生活、规划新岁的重要节点。建议利用假期尾声，对家中环境进行一次彻底的“断舍离”与清洁整理，尤其是厨房、书房等高频使用区域，为新一年的生活与工作腾出清爽、有序的空间。这种整洁的环境能显著提升日常的心情愉悦度与工作专注度，让马年的每一天都从“清爽”开始。
+                            </p>
+                            
+                            <h3 className="md-text-h3">1.2 马年核心运势与家庭期许</h3>
+                            <p className="md-text-p">
+                                在传统文化中，马象征着奔腾、进取与活力。对于上有老下有小的中年家庭来说，马年的运势关键词应聚焦在稳健与精进上。家庭层面，期望家人身体健康、子女学业进步；个人层面，则希望事业与生活达到新的平衡。无论是职场上的策马扬鞭，还是生活中的细致入微，都应秉持“稳中求进”的策略，不盲目冒进，但也绝不停滞不前，让马年的活力转化为实实在在的家庭幸福与个人成长。
+                            </p>
+
+                            <h2 className="md-text-h2">二、职场进阶：数据驱动，高效破局</h2>
+
+                            <h3 className="md-text-h3">2.1 新年工作规划与复盘体系</h3>
+                            <p className="md-text-p">
+                                作为数据 BP 与设计领域的专业人士，马年的工作规划应更具前瞻性与系统性。建议在开工初期，利用 AI 工具快速梳理过往一年的项目数据与设计沉淀，形成可视化的年度复盘报告。重点分析核心业务指标的波动原因，识别出可优化的工作流程，并用 Design Token 规范新一年的设计系统。将年度目标拆解为季度、月度的具体 KPI，嵌入到日常的任务管理工具中，让数据全程驱动决策，确保职场之路一马当先。
+                            </p>
+
+                            <h3 className="md-text-h3">2.2 技术工具迭代与效能优化</h3>
+                            <p className="md-text-p">
+                                技术领域迭代迅速，马年宜主动拥抱变化，进行工具链的升级与优化。针对日常使用的代码编辑器与设计工具，建议定期检查插件更新与版本状态，及时卸载冗余插件以保证运行流畅。在前端开发与 Figma 设计工作中，可多探索 AI 原生插件的应用，如自动化生成组件、智能补全代码等，将繁琐的重复性工作交给 AI 处理，把更多精力投入到创意与逻辑构建中，实现工作效率的马不停蹄。
+                            </p>
+
+                            <h2 className="md-text-h2">三、家庭生活：精打细算，温情常在</h2>
+
+                            <h3 className="md-text-h3">3.1 居家消费与性价比优选</h3>
+                            <p className="md-text-p">
+                                马年新春的采购与日常开销，建议坚持“实用主义”与“性价比”并重的原则。在购置食品、日用品等消耗品时，不仅要关注材质与用法，更要理性分析价格波动，善用政府发布的民生消费指南与官方平台的促销信息。对于家庭大件物品的更换，如家电、家具等，可参考权威的评测数据与用户口碑，避免冲动消费。为家人储备健康食材与常备药品，既是对生活的精细打理，也是一种温情的守护。
+                            </p>
+
+                            <h3 className="md-text-h3">3.2 亲子时光与品质陪伴</h3>
+                            <p className="md-text-p">
+                                春节假期是增进亲子关系的黄金时期。对于有孩子的家庭而言，除了安排走亲访友，更应留出专属的高质量亲子时光。可以利用假期一起阅读绘本、制作手工，或是探讨新一年的学习计划。同时，结合北京的本地资源，在天气适宜时带孩子探索博物馆、公园，感受首都的文化底蕴。在陪伴过程中，放下手机，专注交流，这种情感的滋养远比物质的满足更能让孩子茁壮成长，也让家庭的年味更加醇厚。
+                            </p>
+                        </>
+                    )
+                },
+                {
+                    id: 'code-list',
+                    name: '代码与列表展示',
+                    query: '如何在 React 中使用 Hooks 管理状态？请提供示例。',
+                    render: () => (
+                        <>
+                            <p className="md-text-p">在 React 中，你可以使用 <span className="md-inline-code">useState</span> 来管理组件内部的状态。以下是一个简单的计数器示例：</p>
+                            
+                            <div style={styles.codeBlockWrap}>
+                                <div style={styles.codeBlockInner}>
+                                    <div style={styles.codeBlockHeader}>
+                                        <span style={styles.codeBlockHeaderLang}>html</span>
+                                        <div style={styles.codeBlockHeaderIcons}>
+                                            <i data-lucide="download" style={{width: '16px', height: '16px', color: '#a0a2a7'}}></i>
+                                            <i data-lucide="chevrons-up-down" style={{width: '16px', height: '16px', color: '#a0a2a7'}}></i>
+                                            <i data-lucide="copy" style={{width: '16px', height: '16px', color: '#a0a2a7'}}></i>
+                                            <i data-lucide="maximize" style={{width: '16px', height: '16px', color: '#a0a2a7'}}></i>
+                                        </div>
+                                    </div>
+                                    <div style={styles.codeBlockContentWrap}>
+                                        <div style={styles.codeBlockLines}>
+                                            1<br/>2<br/>3<br/>4<br/>5<br/>6<br/>7<br/>8<br/>9<br/>10<br/>11<br/>12<br/>13<br/>14<br/>15
+                                        </div>
+                                        <div style={styles.codeBlockCode}>
+<span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>!DOCTYPE html</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+<span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>html</span> <span style={{color: '#cc7700'}}>lang</span>=<span style={{color: '#4da621'}}>"zh"</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+<span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>head</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+    <span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>meta</span> <span style={{color: '#cc7700'}}>charset</span>=<span style={{color: '#4da621'}}>"UTF-8"</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+    <span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>meta</span> <span style={{color: '#cc7700'}}>name</span>=<span style={{color: '#4da621'}}>"viewport"</span> <span style={{color: '#cc7700'}}>content</span>=<span style={{color: '#4da621'}}>"width=device-width, initial-scale=1.0"</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+    <span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>title</span><span style={{color: '#0c0d0e'}}>&gt;</span>贪吃蛇小游戏<span style={{color: '#0c0d0e'}}>&lt;/</span><span style={{color: '#e24864'}}>title</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+<span style={{color: '#0c0d0e'}}>&lt;/</span><span style={{color: '#e24864'}}>head</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+<span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>!DOCTYPE html</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+<span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>html</span> <span style={{color: '#cc7700'}}>lang</span>=<span style={{color: '#4da621'}}>"zh"</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+<span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>head</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+    <span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>meta</span> <span style={{color: '#cc7700'}}>charset</span>=<span style={{color: '#4da621'}}>"UTF-8"</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+    <span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>meta</span> <span style={{color: '#cc7700'}}>name</span>=<span style={{color: '#4da621'}}>"viewport"</span> <span style={{color: '#cc7700'}}>content</span>=<span style={{color: '#4da621'}}>"width=device-width, initial-scale=1.0"</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+    <span style={{color: '#0c0d0e'}}>&lt;</span><span style={{color: '#e24864'}}>title</span><span style={{color: '#0c0d0e'}}>&gt;</span>贪吃蛇小游戏<span style={{color: '#0c0d0e'}}>&lt;/</span><span style={{color: '#e24864'}}>title</span><span style={{color: '#0c0d0e'}}>&gt;</span><br/>
+<span style={{color: '#0c0d0e'}}>&lt;/</span><span style={{color: '#e24864'}}>head</span><span style={{color: '#0c0d0e'}}>&gt;</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <h3 className="md-text-h3">关键点解析：</h3>
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}><strong>引入 Hook</strong>：从 React 导入 <span className="md-inline-code">useState</span> 函数。</p>
+                            </div>
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}><strong>初始化状态</strong>：调用它并传入初始值 <span className="md-inline-code">0</span>，返回当前状态和更新函数。</p>
+                            </div>
+                            
+                            {/* 第二层级 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 24}px`}}>
+                                <div style={{...styles.ulDot, backgroundColor: 'transparent', border: '1px solid #9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>这会返回一个数组，包含两个元素：</p>
+                            </div>
+                            
+                            {/* 第三层级 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 48}px`}}>
+                                <div style={{...styles.ulDot, width: '4px', height: '4px', borderRadius: '0', backgroundColor: '#9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>当前的状态值 (state variable)</p>
+                            </div>
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 48}px`}}>
+                                <div style={{...styles.ulDot, width: '4px', height: '4px', borderRadius: '0', backgroundColor: '#9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>更新该状态的函数 (setter function)</p>
+                            </div>
+
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px', marginTop: '8px'}}>
+                                <div style={{...styles.olNumber, marginTop: '2px'}}>1.</div>
+                                <p style={{...styles.p, marginBottom: 0}}>如果状态依赖于之前的值，建议传入一个回调函数给 setCount。</p>
+                            </div>
+                            
+                            {/* 第二层级有序列表 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 24}px`}}>
+                                <div style={{...styles.olNumber, marginTop: '2px'}}>a.</div>
+                                <p style={{...styles.p, marginBottom: 0}}>这是因为 React 状态更新可能是异步的</p>
+                            </div>
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 24}px`}}>
+                                <div style={{...styles.olNumber, marginTop: '2px'}}>b.</div>
+                                <p style={{...styles.p, marginBottom: 0}}>回调函数能确保你拿到的是最新状态</p>
+                            </div>
+                        </>
+                    )
+                },
+                {
+                    id: 'table-quote',
+                    name: '表格与引用标记',
+                    query: '对比一下几款常见的前端框架的优缺点，并引用相关文献。',
+                    render: () => (
+                        <>
+                            <p className="md-text-p">以下是阿里云常见核心产品的说明与功能对比<span style={styles.citationBadge}>1</span>：</p>
+                            
+                            <div style={styles.tableWrap}>
+                                <div style={styles.tableInner}>
+                                    <div style={styles.tableHeaderRow}>
+                                        <span style={styles.tableTitle}>表格</span>
+                                        <div style={styles.tableHeaderIconWrap}>
+                                            <i data-lucide="copy" style={{width: '16px', height: '16px', color: '#a0a2a7'}}></i>
+                                        </div>
+                                    </div>
+                                    <table style={styles.table}>
+                                        <thead>
+                                            <tr>
+                                                <th style={{...styles.th, width: '150px'}}>分类</th>
+                                                <th style={{...styles.th, width: '260px'}}>核心功能</th>
+                                                <th style={{...styles.th, width: '358px'}}>说明</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td style={styles.td}>计费方式</td>
+                                                <td style={styles.td}>按量计费、包年包月、抢占式实例等</td>
+                                                <td style={styles.td}>
+                                                    提供灵活的计费模式以适应不同业务场景<span style={styles.citationBadge}>1</span>。
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style={styles.td}>实例与镜像</td>
+                                                <td style={styles.td}>实例、镜像、高性能计算集群</td>
+                                                <td style={styles.td}>
+                                                    实例即虚拟机,镜像是包含操作系统和应用的模板<span style={styles.citationBadge}>1</span>。
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style={styles.td}>存储</td>
+                                                <td style={styles.td}>云盘、快照</td>
+                                                <td style={styles.td}>
+                                                    云盘提供高可用的块存储,快照用于数据备份<span style={styles.citationBadge}>1</span>。
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style={styles.td}>网络与安全</td>
+                                                <td style={styles.td}>私有网络、安全组、公网IP、密钥对</td>
+                                                <td style={styles.td}>
+                                                    构建隔离的网络环境并控制访问安全<span style={styles.citationBadge}>1</span>。
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style={styles.td}>弹性与部署</td>
+                                                <td style={styles.td}>实例启动模板、部署集</td>
+                                                <td style={styles.td}>
+                                                    支持快速部署实例和实现底层硬件容灾<span style={styles.citationBadge}>1</span>。
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td style={styles.td}>账户与资源管理</td>
+                                                <td style={styles.td}>访问控制(IAM)、标签、项目</td>
+                                                <td style={styles.td}>
+                                                    实现资源的分权管理和分类<span style={styles.citationBadge}>1</span>。
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <h3 className="md-text-h3">专家评价</h3>
+                            <div style={styles.blockquoteWrap}>
+                                <div style={styles.blockquoteBorder}></div>
+                                <div style={styles.blockquoteContent}>
+                                    "React is not a framework, it's a library for building user interfaces. Vue is a progressive framework." 
+                                    <br/>— Front-end Masters<span style={styles.citationBadge}>2</span>
+                                </div>
+                            </div>
+                            
+                            <div style={styles.divider}></div>
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                                <div className="reference-item" style={styles.referenceItemWrap}>
+                                    <span style={{...styles.citationBadge, marginLeft: 0}}>1</span>
+                                    <span className="reference-title" style={styles.referenceItemTitle}>前端框架演进史, 2023</span>
+                                    <span style={styles.referenceItemDate}>2024-01-01</span>
+                                </div>
+                                <div className="reference-item" style={styles.referenceItemWrap}>
+                                    <span style={{...styles.citationBadge, marginLeft: 0}}>2</span>
+                                    <span className="reference-title" style={styles.referenceItemTitle}>Web Development Quotes</span>
+                                    <span style={styles.referenceItemDate}>2024-01-02</span>
+                                </div>
+                            </div>
+                        </>
+                    )
+                },
+                {
+                    id: 'media-variants',
+                    name: '图片与多媒体排版',
+                    query: '给我展示一下生成的复古噪点风格图片。',
+                    render: () => {
+                        const renderImage = (seed) => (
+                            <div className="image-frame-hover" style={styles.imageFrame}>
+                                <img src={`https://api.dicebear.com/7.x/bottts/svg?seed=${seed}&backgroundColor=c0aede,ffdfbf,ffd5dc,d1d4f9,b6e3f4`} style={{width: '100%', height: '100%', objectFit: 'cover'}} alt="generated" />
+                                <div className="image-action-wrap" style={styles.imageActionWrap}>
+                                    <button style={styles.imageActionBtn} title="下载"><i data-lucide="download" style={{width: '14px', height: '14px'}}></i></button>
+                                </div>
+                            </div>
+                        );
+
+                        return (
+                            <>
+                                <p className="md-text-p">好的，我将为你生成复古噪点风格的图片（单图）：</p>
+                                <div style={styles.imageWrap}>
+                                    <div style={{...styles.imageGrid, gridTemplateColumns: 'repeat(1, 400px)'}}>
+                                        {renderImage(1)}
+                                    </div>
+                                </div>
+
+                                <p className="md-text-p">生成两张图片的情况（双列等宽）：</p>
+                                <div style={styles.imageWrap}>
+                                    <div style={{...styles.imageGrid, gridTemplateColumns: 'repeat(2, 1fr)'}}>
+                                        {renderImage(2)}
+                                        {renderImage(3)}
+                                    </div>
+                                </div>
+
+                                <p className="md-text-p">生成三张图片的情况（三列等宽）：</p>
+                                <div style={styles.imageWrap}>
+                                    <div style={{...styles.imageGrid, gridTemplateColumns: 'repeat(3, 1fr)'}}>
+                                        {renderImage(4)}
+                                        {renderImage(5)}
+                                        {renderImage(6)}
+                                    </div>
+                                </div>
+
+                                <p className="md-text-p">生成四张图片的情况（四列等宽，如示例图）：</p>
+                                <div style={styles.imageWrap}>
+                                    <div style={{...styles.imageGrid, gridTemplateColumns: 'repeat(4, 1fr)'}}>
+                                        {renderImage(7)}
+                                        {renderImage(8)}
+                                        {renderImage(9)}
+                                        {renderImage(10)}
+                                    </div>
+                                </div>
+                            </>
+                        );
+                    }
+                },
+                {
+                    id: 'other-variants',
+                    name: '综合变体与分隔符',
+                    query: '展示一下分隔符和引用标记的组合效果，以及各种层级的表现。',
+                    render: () => (
+                        <>
+                            <p className="md-text-p">这是一段关于段落与分隔线的综合测试说明。在实际的 AI Agent 问答场景中，我们经常需要将大段的文字、列表、代码或引用混合在一起展示。合理地使用分隔符（Divider）能够有效地降低用户的认知负荷，让内容的逻辑层级更加清晰<span style={styles.citationBadge}>1</span>。</p>
+                            <p className="md-text-p">同时，多层级的列表配合引用标记，可以精准地溯源信息的出处，这对于专业领域（如法律、医疗、学术）的回答尤为重要。</p>
+                            
+                            <div style={styles.divider}></div>
+                            
+                            <h2 className="md-text-h2">核心要点与排版层级</h2>
+                            <p className="md-text-p">以下是我们在设计排版系统时，总结出的几个关键要素：</p>
+                            
+                            {/* Level 1 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>
+                                    <strong>第一点：引用标记的行内展示</strong>。引用标记应该紧贴相关内容，并且不能破坏原有的行高<span style={styles.citationBadge}>2</span>。
+                                </p>
+                            </div>
+                            
+                            {/* Level 1 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>
+                                    <strong>第二点：多层级列表的缩进规范</strong>。为了保证视觉的舒适度，我们需要严格控制每一层的缩进比例。
+                                </p>
+                            </div>
+                            
+                            {/* Level 2 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 24}px`}}>
+                                <div style={{...styles.ulDot, backgroundColor: 'transparent', border: '1px solid #9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>单层缩进的基础递增值为 24px（即 1.5rem）。</p>
+                            </div>
+                            
+                            {/* Level 3 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 48}px`}}>
+                                <div style={{...styles.ulDot, width: '4px', height: '4px', borderRadius: '0', backgroundColor: '#9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>第三层级通常使用实心方块作为标记，以区分前面的圆点系列。</p>
+                            </div>
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 48}px`}}>
+                                <div style={{...styles.ulDot, width: '4px', height: '4px', borderRadius: '0', backgroundColor: '#9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>如果层级更深，建议考虑重新组织内容结构，避免过度嵌套导致阅读困难<span style={styles.citationBadge}>3</span>。</p>
+                            </div>
+
+                            {/* Level 2 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 24}px`}}>
+                                <div style={{...styles.ulDot, backgroundColor: 'transparent', border: '1px solid #9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>列表项之间的间距（paddingBottom）固定为 8px。</p>
+                            </div>
+                            
+                            {/* Level 1 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>
+                                    <strong>第三点：分隔线的恰当使用</strong>。不应滥用分隔线，仅在主题发生明显切换时使用。
+                                </p>
+                            </div>
+
+                            <div style={styles.divider}></div>
+
+                            <h2 className="md-text-h2">核心要点与排版层级</h2>
+                            <p className="md-text-p">以下是我们在设计排版系统时，总结出的几个关键要素：</p>
+                            
+                            {/* Level 1 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>
+                                    <strong>第一点：引用标记的行内展示</strong>。引用标记应该紧贴相关内容，并且不能破坏原有的行高<span style={styles.citationBadge}>2</span>。
+                                </p>
+                            </div>
+                            
+                            {/* Level 1 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>
+                                    <strong>第二点：多层级列表的缩进规范</strong>。为了保证视觉的舒适度，我们需要严格控制每一层的缩进比例。
+                                </p>
+                            </div>
+                            
+                            {/* Level 2 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 24}px`}}>
+                                <div style={{...styles.ulDot, backgroundColor: 'transparent', border: '1px solid #9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>单层缩进的基础递增值为 24px（即 1.5rem）。</p>
+                            </div>
+                            
+                            {/* Level 3 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 48}px`}}>
+                                <div style={{...styles.ulDot, width: '4px', height: '4px', borderRadius: '0', backgroundColor: '#9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>第三层级通常使用实心方块作为标记，以区分前面的圆点系列。</p>
+                            </div>
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 48}px`}}>
+                                <div style={{...styles.ulDot, width: '4px', height: '4px', borderRadius: '0', backgroundColor: '#9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>如果层级更深，建议考虑重新组织内容结构，避免过度嵌套导致阅读困难<span style={styles.citationBadge}>3</span>。</p>
+                            </div>
+
+                            {/* Level 2 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: `${8 + 24}px`}}>
+                                <div style={{...styles.ulDot, backgroundColor: 'transparent', border: '1px solid #9e9e9e'}}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>列表项之间的间距（paddingBottom）固定为 8px。</p>
+                            </div>
+                            
+                            {/* Level 1 */}
+                            <div style={{...styles.listItemWrap, paddingLeft: '8px'}}>
+                                <div style={styles.ulDot}></div>
+                                <p style={{...styles.p, marginBottom: 0}}>
+                                    <strong>第三点：分隔线的恰当使用</strong>。不应滥用分隔线，仅在主题发生明显切换时使用。
+                                </p>
+                            </div>
+
+                            <div style={styles.divider}></div>
+                            
+                            <h3 className="md-text-h3">扩展阅读与参考资料</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                                <div className="reference-item" style={styles.referenceItemWrap}>
+                                    <span style={{...styles.citationBadge, marginLeft: 0}}>1</span>
+                                    <span className="reference-title" style={styles.referenceItemTitle}>认知心理学与界面设计，2023</span>
+                                    <span style={styles.referenceItemDate}>2024-01-01</span>
+                                </div>
+                                <div className="reference-item" style={styles.referenceItemWrap}>
+                                    <span style={{...styles.citationBadge, marginLeft: 0}}>2</span>
+                                    <span className="reference-title" style={styles.referenceItemTitle}>排版系统指南：行高与行内元素</span>
+                                    <span style={styles.referenceItemDate}>2024-01-02</span>
+                                </div>
+                                <div className="reference-item" style={styles.referenceItemWrap}>
+                                    <span style={{...styles.citationBadge, marginLeft: 0}}>3</span>
+                                    <span className="reference-title" style={styles.referenceItemTitle}>Web 内容可访问性指南 (WCAG)</span>
+                                    <span style={styles.referenceItemDate}>2024-01-03</span>
+                                </div>
+                            </div>
+                        </>
+                    )
+                }
+            ];
+
+            const activeCase = testCases.find(c => c.id === activeCaseId) || testCases[0];
+
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [aiResult, activeCaseId]);
+
+            return (
+                <div className="flex h-full w-full bg-white overflow-hidden">
+                    {/* Sidebar for cases */}
+                    <aside className="w-64 border-r border-slate-200 bg-slate-50 flex flex-col h-full shrink-0">
+                        <div className="p-4 border-b border-slate-200">
+                            <h2 className="text-sm font-semibold text-slate-800">测试场景 (Cases)</h2>
+                            <p className="text-xs text-slate-500 mt-1">选择不同排版结构预览样式效果</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                            {testCases.map(c => (
+                                <button
+                                    key={c.id}
+                                    onClick={() => setActiveCaseId(c.id)}
+                                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                                        activeCaseId === c.id 
+                                            ? 'bg-indigo-50 text-indigo-700 font-medium' 
+                                            : 'text-slate-600 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    {c.name}
+                                </button>
+                            ))}
+                        </div>
+                    </aside>
+
+                    {/* Main Panel: Preview only */}
+                    <main className="flex-1 flex flex-col bg-white overflow-hidden">
+                        <div className="flex-1 overflow-y-auto p-12 flex justify-center items-start">
+                            <div className="flex flex-col gap-6" style={{ width: '768px', padding: '32px 0' }}>
+                                
+                                {/* User Bubble */}
+                                <div style={styles.userBubble}>
+                                    {activeCase.id === 'ai-generator' ? submittedPrompt : activeCase.query}
+                                </div>
+
+                                {/* Agent Response */}
+                                <div className="preview-container flex flex-col" style={{ ...styles.root, gap: '0px', ...cssVariables }}>
+                                    
+                                    {activeCase.render()}
+
+                                    {/* Action Bar */}
+                                    <div className="flex items-center gap-4 mt-6 text-slate-400">
+                                        <button className="hover:text-slate-600 transition-colors"><i data-lucide="thumbs-up" className="w-4 h-4"></i></button>
+                                        <button className="hover:text-slate-600 transition-colors"><i data-lucide="thumbs-down" className="w-4 h-4"></i></button>
+                                        <button className="hover:text-slate-600 transition-colors"><i data-lucide="copy" className="w-4 h-4"></i></button>
+                                        <button className="hover:text-slate-600 transition-colors"><i data-lucide="rotate-ccw" className="w-4 h-4"></i></button>
+                                        <button className="hover:text-slate-600 transition-colors"><i data-lucide="more-horizontal" className="w-4 h-4"></i></button>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Prompt Input Box */}
+                        <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-center shrink-0">
+                            <form 
+                                onSubmit={handleGenerate} 
+                                className="flex gap-4 w-full max-w-3xl items-center bg-white border border-slate-300 rounded-xl px-4 py-2 shadow-sm focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all"
+                            >
+                                <input
+                                    type="text"
+                                    value={promptInput}
+                                    onChange={(e) => setPromptInput(e.target.value)}
+                                    placeholder="输入 Prompt 让模型生成内容..."
+                                    className="flex-1 outline-none border-none text-slate-800 placeholder-slate-400 py-2 bg-transparent"
+                                    disabled={isGenerating}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={isGenerating || !promptInput.trim()}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg p-2 disabled:opacity-50 transition-colors flex items-center justify-center"
+                                >
+                                    {isGenerating ? (
+                                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    ) : (
+                                        <i data-lucide="send" className="w-5 h-5"></i>
+                                    )}
+                                </button>
+                            </form>
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        function Control({ label, value, name, min, max, step, onChange }) {
+            return (
+                <div className="space-y-2">
+                    <div className="flex justify-between items-end">
+                        <span className="text-xs text-slate-600">{label}</span>
+                        <span className="text-xs font-mono font-medium text-indigo-600 bg-indigo-50 px-1.5 rounded">{value}</span>
+                    </div>
+                    <input 
+                        type="range" 
+                        name={name}
+                        value={value}
+                        min={min} max={max} step={step}
+                        onChange={onChange}
+                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                </div>
+            );
+        }
+
+        function ColorInput({ label, name, value, onChange }) {
+            return (
+                <div className="space-y-2">
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase">{label}</span>
+                    <div className="flex gap-2 items-center">
+                        <input 
+                            type="color" 
+                            name={name}
+                            value={value}
+                            onChange={onChange}
+                            className="w-8 h-8 rounded border border-slate-200 cursor-pointer p-0 overflow-hidden"
+                        />
+                        <input 
+                            type="text" 
+                            name={name}
+                            value={value}
+                            onChange={onChange}
+                            className="text-xs font-mono w-full border-b border-slate-100 focus:border-indigo-500 outline-none pb-0.5"
+                        />
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        
+        // Initialize lucide icons
+        setTimeout(() => lucide.createIcons(), 100);
+    </script>
+</body>
+</html>

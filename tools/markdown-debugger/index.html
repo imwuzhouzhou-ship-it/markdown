@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Markdown Style Lab</title>
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="control-panel">
+        <div class="panel-head">
+          <p class="eyebrow">Markdown Design</p>
+          <h1>Style Lab</h1>
+          <p class="panel-copy">
+            用来调试 Markdown 的排版节奏、主题 token 和 `react-markdown`
+            输出样式。预览使用本地轻量解析器，导出代码面向 `react-markdown +
+            remark-gfm`。
+          </p>
+        </div>
+
+        <section class="control-group">
+          <div class="group-title-row">
+            <h2>Preset</h2>
+            <button id="resetPreset" class="ghost-button" type="button">恢复推荐值</button>
+          </div>
+          <label>
+            <span>预设</span>
+            <select id="preset">
+              <option value="chat-balanced">Chat Balanced</option>
+              <option value="report-structured">Report Structured</option>
+              <option value="doc-technical">Doc Technical</option>
+            </select>
+          </label>
+          <div class="two-column">
+            <label>
+              <span>场景</span>
+              <select id="surface">
+                <option value="chat">Chat</option>
+                <option value="report">Report</option>
+                <option value="doc">Doc</option>
+                <option value="article">Article</option>
+              </select>
+            </label>
+            <label>
+              <span>主题</span>
+              <select id="theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+          </div>
+          <div class="two-column">
+            <label>
+              <span>语言模式</span>
+              <select id="languageMode">
+                <option value="mixed">Mixed</option>
+                <option value="cjk">CJK</option>
+                <option value="latin">Latin</option>
+              </select>
+            </label>
+            <label>
+              <span>节奏模型</span>
+              <select id="rhythm">
+                <option value="fixed">Fixed</option>
+                <option value="progressive">Progressive</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="control-group">
+          <h2>Typography</h2>
+          <div class="slider-grid">
+            <label>
+              <span>正文大小 <output id="bodySizeValue">16px</output></span>
+              <input id="bodySize" type="range" min="14" max="20" step="1" value="16" />
+            </label>
+            <label>
+              <span>行长 <output id="maxWidthValue">760px</output></span>
+              <input id="maxWidth" type="range" min="680" max="880" step="10" value="760" />
+            </label>
+            <label>
+              <span>CJK 行高 <output id="lineHeightCjkValue">1.50</output></span>
+              <input id="lineHeightCjk" type="range" min="1.4" max="1.8" step="0.05" value="1.5" />
+            </label>
+            <label>
+              <span>Latin 行高 <output id="lineHeightLatinValue">1.75</output></span>
+              <input id="lineHeightLatin" type="range" min="1.5" max="1.95" step="0.05" value="1.75" />
+            </label>
+            <label>
+              <span>Mixed 行高 <output id="lineHeightMixedValue">1.63</output></span>
+              <input id="lineHeightMixed" type="range" min="1.5" max="1.8" step="0.025" value="1.625" />
+            </label>
+            <label>
+              <span>H1 大小 <output id="h1SizeValue">24px</output></span>
+              <input id="h1Size" type="range" min="20" max="32" step="1" value="24" />
+            </label>
+            <label>
+              <span>H2 大小 <output id="h2SizeValue">20px</output></span>
+              <input id="h2Size" type="range" min="18" max="28" step="1" value="20" />
+            </label>
+            <label>
+              <span>H3 大小 <output id="h3SizeValue">18px</output></span>
+              <input id="h3Size" type="range" min="16" max="24" step="1" value="18" />
+            </label>
+          </div>
+        </section>
+
+        <section class="control-group">
+          <h2>Spacing</h2>
+          <div class="slider-grid">
+            <label>
+              <span>段落间距 <output id="paragraphGapValue">12px</output></span>
+              <input id="paragraphGap" type="range" min="8" max="24" step="1" value="12" />
+            </label>
+            <label>
+              <span>区块间距 <output id="blockGapValue">16px</output></span>
+              <input id="blockGap" type="range" min="12" max="28" step="1" value="16" />
+            </label>
+            <label>
+              <span>列表项间距 <output id="listGapValue">6px</output></span>
+              <input id="listGap" type="range" min="2" max="12" step="1" value="6" />
+            </label>
+            <label>
+              <span>分隔线间距 <output id="dividerGapValue">28px</output></span>
+              <input id="dividerGap" type="range" min="16" max="40" step="1" value="28" />
+            </label>
+          </div>
+          <label class="toggle-row">
+            <input id="underlineLinks" type="checkbox" checked />
+            <span>链接默认带下划线</span>
+          </label>
+        </section>
+
+        <section class="control-group">
+          <h2>Color</h2>
+          <div class="color-grid">
+            <label>
+              <span>主文本</span>
+              <input id="colorTextPrimary" type="color" value="#1f1f1f" />
+            </label>
+            <label>
+              <span>次文本</span>
+              <input id="colorTextSecondary" type="color" value="#5b5f66" />
+            </label>
+            <label>
+              <span>链接</span>
+              <input id="colorLink" type="color" value="#1456d9" />
+            </label>
+            <label>
+              <span>细边框</span>
+              <input id="colorBorderSubtle" type="color" value="#dde2ea" />
+            </label>
+            <label>
+              <span>弱背景</span>
+              <input id="colorSurfaceSubtle" type="color" value="#f5f7fa" />
+            </label>
+            <label>
+              <span>代码背景</span>
+              <input id="colorSurfaceCode" type="color" value="#f3f5f8" />
+            </label>
+          </div>
+        </section>
+
+        <section class="control-group">
+          <div class="group-title-row">
+            <h2>Markdown</h2>
+            <div class="sample-switcher">
+              <button class="chip-button" data-sample="assistant" type="button">Assistant</button>
+              <button class="chip-button" data-sample="report" type="button">Report</button>
+              <button class="chip-button" data-sample="technical" type="button">Technical</button>
+            </div>
+          </div>
+          <textarea id="markdownInput" spellcheck="false"></textarea>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section class="preview-stage">
+          <div class="stage-header">
+            <div>
+              <p class="eyebrow">Live Preview</p>
+              <h2>调试视图</h2>
+            </div>
+            <div class="toolbar-actions">
+              <button id="copyShareLink" class="ghost-button" type="button">复制分享链接</button>
+            </div>
+          </div>
+
+          <div id="surfaceFrame" class="surface-frame" data-surface="chat" data-theme="light">
+            <div class="surface-toolbar">
+              <span class="surface-chip">Assistant Response</span>
+              <span id="surfaceMeta" class="surface-meta">Chat / Mixed / Fixed</span>
+            </div>
+            <div class="surface-body">
+              <article id="markdownPreview" class="markdown-body" aria-label="Markdown preview"></article>
+            </div>
+          </div>
+        </section>
+
+        <section class="export-stage">
+          <div class="stage-header">
+            <div>
+              <p class="eyebrow">Generated Output</p>
+              <h2>导出片段</h2>
+            </div>
+            <div class="tab-row" role="tablist" aria-label="Generated code tabs">
+              <button class="tab-button is-active" data-tab="css" type="button">CSS</button>
+              <button class="tab-button" data-tab="react" type="button">React</button>
+              <button class="tab-button" data-tab="tokens" type="button">Tokens</button>
+              <button class="tab-button" data-tab="html" type="button">HTML</button>
+            </div>
+          </div>
+
+          <div class="output-panel">
+            <div class="output-toolbar">
+              <span id="outputLabel">可直接复制到样式文件</span>
+              <button id="copyOutput" class="ghost-button" type="button">复制当前片段</button>
+            </div>
+            <pre class="code-output"><code id="outputCode"></code></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

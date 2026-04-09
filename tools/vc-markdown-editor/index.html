@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VC-Markdown Skill Editor</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/marked@4.3.0/marked.min.js"></script>
+    <link rel="stylesheet" href="/vc-markdown/markdown.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+        :root {
+            --font-main: "ui-sans-serif", "-apple-system", "system-ui", "Segoe UI", "Helvetica", "Apple Color Emoji", "Arial", "sans-serif", "Segoe UI Emoji", "Segoe UI Symbol";
+            --font-mono: "JetBrains Mono", "SF Mono", "Roboto Mono", monospace;
+        }
+        body {
+            font-family: var(--font-main);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+    </style>
+</head>
+<body class="bg-white text-slate-900 overflow-hidden h-screen">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useEffect, useMemo, useRef, useState } = React;
+
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { error: null };
+            }
+            static getDerivedStateFromError(error) {
+                return { error };
+            }
+            componentDidCatch(error) {
+                console.error("VC Markdown Editor runtime error:", error);
+            }
+            render() {
+                if (this.state.error) {
+                    return (
+                        <div className="h-full w-full flex items-center justify-center bg-slate-50 p-8">
+                            <div className="w-full max-w-2xl rounded-xl border border-red-200 bg-red-50 p-6 text-red-800">
+                                <div className="font-semibold">页面运行时错误</div>
+                                <pre className="mt-3 whitespace-pre-wrap text-xs">{String(this.state.error && this.state.error.message ? this.state.error.message : this.state.error)}</pre>
+                            </div>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        function LucideIcon({ name, className = "w-4 h-4" }) {
+            const svg = useMemo(() => {
+                try {
+                    const icons = window.lucide && window.lucide.icons ? window.lucide.icons : null;
+                    if (!icons) return "";
+                    const icon = icons[name] || icons.copy || icons.circle;
+                    return icon && icon.toSvg ? icon.toSvg({ class: className }) : "";
+                } catch (e) {
+                    return "";
+                }
+            }, [name, className]);
+            if (!svg) return null;
+            return <span dangerouslySetInnerHTML={{ __html: svg }} aria-hidden="true" />;
+        }
+
+        const escapeHtml = (s) => String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+
+        const buildKeywordRegex = (keywords) => {
+            const escaped = keywords.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+            return new RegExp(`\\b(?:${escaped.join("|")})\\b`, "g");
+        };
+
+        const normalizeLanguage = (language) => {
+            const raw = String(language || "").toLowerCase();
+            const map = { js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript", yml: "yaml", sh: "bash", shell: "bash" };
+            return map[raw] || raw || "text";
+        };
+
+        const highlightCode = (code, language) => {
+            const lang = normalizeLanguage(language);
+            const patterns = [];
+            const add = (type, regex) => patterns.push({ type, regex: new RegExp(regex.source, regex.flags.includes("g") ? regex.flags : regex.flags + "g") });
+
+            if (lang === "python") {
+                add("comment", /#[^\n]*/g);
+                add("string", /'''[\s\S]*?'''|"""[\s\S]*?"""|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g);
+                add("number", /\b\d+(\.\d+)?\b/g);
+                add("keyword", buildKeywordRegex(["False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "elif", "else", "except", "finally", "for", "from", "if", "import", "in", "is", "lambda", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield"]));
+            } else if (lang === "yaml") {
+                add("comment", /#[^\n]*/g);
+                add("string", /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g);
+                add("number", /\b\d+(\.\d+)?\b/g);
+                add("keyword", /\b(?:true|false|null|yes|no|on|off)\b/gi);
+                add("attr", /[A-Za-z0-9_-]+(?=\s*:)/g);
+            } else if (lang === "javascript" || lang === "typescript") {
+                add("comment", /\/\/[^\n]*/g);
+                add("comment", /\/\*[\s\S]*?\*\//g);
+                add("string", /`(?:\\.|[^`\\])*`|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g);
+                add("number", /\b\d+(\.\d+)?\b/g);
+                add("keyword", buildKeywordRegex(["break", "case", "catch", "class", "const", "continue", "default", "delete", "do", "else", "export", "extends", "false", "finally", "for", "function", "if", "import", "in", "instanceof", "let", "new", "null", "return", "super", "switch", "this", "throw", "true", "try", "typeof", "var", "while", "await", "async", "interface", "type"]));
+            } else if (lang === "json") {
+                add("attr", /"(?:\\.|[^"\\])*"(?=\s*:)/g);
+                add("string", /"(?:\\.|[^"\\])*"/g);
+                add("number", /-?\b\d+(\.\d+)?\b/g);
+                add("literal", /\b(?:true|false|null)\b/g);
+                add("punctuation", /[\[\]\{\}:,]/g);
+            } else {
+                add("comment", /#[^\n]*/g);
+                add("comment", /\/\/[^\n]*/g);
+                add("string", /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g);
+                add("number", /\b\d+(\.\d+)?\b/g);
+            }
+
+            let i = 0;
+            let out = "";
+            while (i < code.length) {
+                let best = null;
+                for (const p of patterns) {
+                    p.regex.lastIndex = i;
+                    const m = p.regex.exec(code);
+                    if (!m) continue;
+                    if (!best || m.index < best.index || (m.index === best.index && m[0].length > best.text.length)) {
+                        best = { type: p.type, index: m.index, text: m[0] };
+                    }
+                }
+                if (!best) {
+                    out += escapeHtml(code.slice(i));
+                    break;
+                }
+                if (best.index > i) out += escapeHtml(code.slice(i, best.index));
+                out += `<span class="vc-md-token vc-md-token-${best.type}">${escapeHtml(best.text)}</span>`;
+                i = best.index + best.text.length;
+            }
+            return out;
+        };
+
+        const getCodeFileExtension = (language) => {
+            const normalized = normalizeLanguage(language);
+            const map = { javascript: "js", typescript: "ts", yaml: "yaml", python: "py", json: "json", html: "html", css: "css", bash: "sh", text: "txt" };
+            return map[normalized] || normalized || "txt";
+        };
+
+        const extractFirstCssBlock = (text) => {
+            const m = String(text || "").match(/```css\s*([\s\S]*?)```/i);
+            return m ? m[1].trim() : "";
+        };
+
+        const scopeCssToSelector = (css, scopeSelector) => {
+            const raw = String(css || "").trim();
+            if (!raw) return "";
+            return raw
+                .replace(/(^|[{\s])(:root)(?=[\s{])/g, `$1${scopeSelector}`)
+                .replace(/(^|[{\s])(html|body)(?=[\s{])/g, `$1${scopeSelector}`)
+                .replace(/(^|})\s*([^{@}][^{]*?)\s*\{/g, (full, brace, selectors) => {
+                    const parts = selectors.split(",").map((s) => s.trim()).filter(Boolean);
+                    return `${brace}\n${parts.map((s) => s.startsWith(scopeSelector) ? s : `${scopeSelector} ${s}`).join(", ")} {`;
+                });
+        };
+
+        const parseSkillRenderOptions = (skillText) => {
+            const s = String(skillText || "");
+            return {
+                code: {
+                    enabled: /代码块.*Header|CodeBlockInner|Language.*Actions/i.test(s),
+                    actions: {
+                        download: /下载|Download/i.test(s),
+                        collapse: /折叠|Collapse/i.test(s),
+                        copy: true,
+                        fullscreen: /全屏|Fullscreen/i.test(s)
+                    }
+                },
+                table: {
+                    enabled: /表格.*标题栏|TableHeader/i.test(s),
+                    actions: {
+                        downloadCsv: /CSV|Download CSV/i.test(s),
+                        copy: true,
+                        fullscreen: /全屏|Fullscreen/i.test(s)
+                    }
+                }
+            };
+        };
+
+        const getTableMatrix = (tableElement) => {
+            if (!tableElement) return [];
+            return Array.from(tableElement.querySelectorAll("tr")).map((row) =>
+                Array.from(row.querySelectorAll("th, td")).map((cell) => (cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim())
+            ).filter((row) => row.length);
+        };
+
+        const toDelimitedText = (matrix, delimiter) =>
+            matrix.map((row) => row.map((cell) => {
+                const value = String(cell ?? "");
+                if (value.includes('"') || value.includes("\n") || value.includes(delimiter)) {
+                    return `"${value.replace(/"/g, '""')}"`;
+                }
+                return value;
+            }).join(delimiter)).join("\n");
+
+        function App() {
+            const previewRef = useRef(null);
+            const skillUploadRef = useRef(null);
+            const [activeCaseId, setActiveCaseId] = useState("ai-generator");
+            const [promptInput, setPromptInput] = useState("");
+            const [submittedPrompt, setSubmittedPrompt] = useState("输入 Prompt 后生成双版本对照");
+            const [aiResult, setAiResult] = useState("");
+            const [aiComparisonResult, setAiComparisonResult] = useState("");
+            const [isGenerating, setIsGenerating] = useState(false);
+            const [uploadedSkillName, setUploadedSkillName] = useState("");
+            const [uploadedSkillContent, setUploadedSkillContent] = useState("");
+            const [aiHistory, setAiHistory] = useState([]);
+            const [activeAiHistoryId, setActiveAiHistoryId] = useState(null);
+            const [baselineSkillInfo, setBaselineSkillInfo] = useState(null);
+            const [comparisonSkillInfo, setComparisonSkillInfo] = useState(null);
+
+            useEffect(() => {
+                try {
+                    const historyRaw = localStorage.getItem("vc-md-ai-history");
+                    if (historyRaw) {
+                        const parsed = JSON.parse(historyRaw);
+                        if (Array.isArray(parsed)) {
+                            setAiHistory(parsed.slice(-30));
+                            const last = parsed[parsed.length - 1];
+                            if (last) {
+                                setSubmittedPrompt(last.prompt || "");
+                                setAiResult(last.result || "");
+                                setAiComparisonResult(last.comparisonResult || "");
+                                setUploadedSkillName(last.uploadedSkillName || "");
+                                setUploadedSkillContent(last.uploadedSkillContent || "");
+                                setBaselineSkillInfo(last.baselineSkillInfo || null);
+                                setComparisonSkillInfo(last.comparisonSkillInfo || null);
+                                setActiveAiHistoryId(last.id || null);
+                            }
+                        }
+                    }
+                    const uploaded = localStorage.getItem("vc-md-uploaded-skill");
+                    if (uploaded) {
+                        const parsed = JSON.parse(uploaded);
+                        if (parsed && typeof parsed === "object") {
+                            setUploadedSkillName(parsed.name || "");
+                            setUploadedSkillContent(parsed.content || "");
+                        }
+                    }
+                } catch (e) {}
+            }, []);
+
+            useEffect(() => {
+                try {
+                    localStorage.setItem("vc-md-ai-history", JSON.stringify(aiHistory.slice(-30)));
+                } catch (e) {}
+            }, [aiHistory]);
+
+            useEffect(() => {
+                try {
+                    localStorage.setItem("vc-md-uploaded-skill", JSON.stringify({
+                        name: uploadedSkillName,
+                        content: uploadedSkillContent
+                    }));
+                } catch (e) {}
+            }, [uploadedSkillName, uploadedSkillContent]);
+
+            const getIconSvg = (name, className = "w-4 h-4") => {
+                try {
+                    const icons = window.lucide && window.lucide.icons ? window.lucide.icons : null;
+                    if (!icons) return "";
+                    const icon = icons[name] || icons.copy || icons.circle;
+                    return icon && icon.toSvg ? icon.toSvg({ class: className }) : "";
+                } catch (e) {
+                    return "";
+                }
+            };
+
+            const renderStructuredMarkdown = (html, options) => {
+                const opts = options || {
+                    code: { enabled: true, actions: { download: true, collapse: true, copy: true, fullscreen: true } },
+                    table: { enabled: true, actions: { downloadCsv: true, copy: true, fullscreen: true } }
+                };
+                const wrapper = document.createElement("div");
+                wrapper.innerHTML = html;
+
+                Array.from(wrapper.querySelectorAll("pre")).forEach((pre, index) => {
+                    if (!opts.code || opts.code.enabled === false) return;
+                    const code = pre.querySelector("code");
+                    const rawText = (code ? code.textContent : pre.textContent) || "";
+                    const normalizedText = rawText.replace(/\n$/, "");
+                    const langClass = (code && code.className) || "";
+                    const langMatch = langClass.match(/language-([a-zA-Z0-9_-]+)/);
+                    const language = langMatch ? langMatch[1] : "text";
+                    const lines = (normalizedText || "").split("\n");
+                    const copyId = `vc-md-code-${index}-${Date.now()}`;
+                    const blockId = `vc-md-code-block-${index}-${Date.now()}`;
+                    const extension = getCodeFileExtension(language);
+                    const actions = opts.code.actions || {};
+
+                    const block = document.createElement("div");
+                    block.className = "vc-md-code-block";
+                    block.innerHTML = `
+                        <div class="vc-md-code-inner" data-vc-code-block="${blockId}" data-vc-download-name="snippet.${extension}">
+                            <div class="vc-md-code-header">
+                                <span class="vc-md-code-language">${escapeHtml(language)}</span>
+                                <div class="vc-md-code-actions">
+                                    ${actions.download ? `<button type="button" data-vc-download-target="${copyId}">${getIconSvg("download")}</button>` : ""}
+                                    ${actions.collapse ? `<button type="button" data-vc-collapse-target="${blockId}">${getIconSvg("chevrons-up-down")}</button>` : ""}
+                                    <button type="button" data-vc-copy-target="${copyId}">${getIconSvg("copy")}</button>
+                                    ${actions.fullscreen ? `<button type="button" data-vc-fullscreen-target="${blockId}">${getIconSvg("maximize")}</button>` : ""}
+                                </div>
+                            </div>
+                            <div class="vc-md-code-content">
+                                <div class="vc-md-code-lines">${lines.map((_, i) => i + 1).join("<br/>")}</div>
+                                <pre data-vc-copy-source="${copyId}"><code class="vc-md-code language-${escapeHtml(language)}">${highlightCode(normalizedText, language)}</code></pre>
+                            </div>
+                        </div>
+                    `;
+                    pre.replaceWith(block);
+                });
+
+                Array.from(wrapper.querySelectorAll("table")).forEach((table, index) => {
+                    if (!opts.table || opts.table.enabled === false) return;
+                    const copyId = `vc-md-table-${index}-${Date.now()}`;
+                    const tableId = `vc-md-table-wrap-${index}-${Date.now()}`;
+                    const actions = opts.table.actions || {};
+                    table.setAttribute("data-vc-copy-source", copyId);
+                    const wrap = document.createElement("div");
+                    wrap.className = "vc-md-table-wrap";
+                    wrap.setAttribute("data-vc-table-wrap", tableId);
+                    wrap.setAttribute("data-vc-download-name", `table-${index + 1}.csv`);
+                    wrap.innerHTML = `
+                        <div class="vc-md-table-header">
+                            <span class="vc-md-table-title">表格</span>
+                            <div class="vc-md-table-actions">
+                                ${actions.downloadCsv ? `<button type="button" data-vc-table-download-target="${tableId}">${getIconSvg("download")}</button>` : ""}
+                                <button type="button" data-vc-copy-target="${copyId}">${getIconSvg("copy")}</button>
+                                ${actions.fullscreen ? `<button type="button" data-vc-table-fullscreen-target="${tableId}">${getIconSvg("maximize")}</button>` : ""}
+                            </div>
+                        </div>
+                    `;
+                    table.replaceWith(wrap);
+                    wrap.appendChild(table);
+                });
+
+                return wrapper.innerHTML;
+            };
+
+            const markdownToHtml = (md, options) => {
+                try {
+                    const parsed = window.marked && window.marked.parse ? window.marked.parse(md || "") : String(md || "");
+                    return renderStructuredMarkdown(parsed, options);
+                } catch (e) {
+                    return `<pre>${escapeHtml(md || "")}</pre>`;
+                }
+            };
+
+            const comparisonRenderOptions = useMemo(
+                () => (uploadedSkillContent ? parseSkillRenderOptions(uploadedSkillContent) : null),
+                [uploadedSkillContent]
+            );
+            const comparisonScopedCss = useMemo(
+                () => scopeCssToSelector(extractFirstCssBlock(uploadedSkillContent), '[data-vc-md-scope="comparison"]'),
+                [uploadedSkillContent]
+            );
+
+            useEffect(() => {
+                const container = previewRef.current;
+                if (!container) return;
+
+                const onClick = async (event) => {
+                    const copyButton = event.target.closest("[data-vc-copy-target]");
+                    if (copyButton) {
+                        const targetId = copyButton.getAttribute("data-vc-copy-target");
+                        const source = container.querySelector(`[data-vc-copy-source="${targetId}"]`);
+                        if (!source) return;
+                        const text = source.tagName === "TABLE" ? toDelimitedText(getTableMatrix(source), "\t") : (source.innerText || source.textContent || "");
+                        try { await navigator.clipboard.writeText(text); } catch (e) {}
+                        return;
+                    }
+
+                    const downloadButton = event.target.closest("[data-vc-download-target]");
+                    if (downloadButton) {
+                        const targetId = downloadButton.getAttribute("data-vc-download-target");
+                        const source = container.querySelector(`[data-vc-copy-source="${targetId}"]`);
+                        const codeInner = downloadButton.closest("[data-vc-code-block]");
+                        if (!source || !codeInner) return;
+                        const blob = new Blob([source.innerText || source.textContent || ""], { type: "text/plain;charset=utf-8" });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = codeInner.getAttribute("data-vc-download-name") || "snippet.txt";
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        URL.revokeObjectURL(url);
+                        return;
+                    }
+
+                    const collapseButton = event.target.closest("[data-vc-collapse-target]");
+                    if (collapseButton) {
+                        const blockId = collapseButton.getAttribute("data-vc-collapse-target");
+                        const codeInner = container.querySelector(`[data-vc-code-block="${blockId}"]`);
+                        if (!codeInner) return;
+                        const collapsed = codeInner.getAttribute("data-vc-code-collapsed") === "true";
+                        codeInner.setAttribute("data-vc-code-collapsed", collapsed ? "false" : "true");
+                        return;
+                    }
+
+                    const fullscreenButton = event.target.closest("[data-vc-fullscreen-target]");
+                    if (fullscreenButton) {
+                        const blockId = fullscreenButton.getAttribute("data-vc-fullscreen-target");
+                        const codeInner = container.querySelector(`[data-vc-code-block="${blockId}"]`);
+                        if (!codeInner) return;
+                        const fullscreen = codeInner.getAttribute("data-vc-code-fullscreen") === "true";
+                        codeInner.setAttribute("data-vc-code-fullscreen", fullscreen ? "false" : "true");
+                        document.body.style.overflow = fullscreen ? "" : "hidden";
+                        return;
+                    }
+
+                    const tableDownloadButton = event.target.closest("[data-vc-table-download-target]");
+                    if (tableDownloadButton) {
+                        const tableId = tableDownloadButton.getAttribute("data-vc-table-download-target");
+                        const tableWrap = container.querySelector(`[data-vc-table-wrap="${tableId}"]`);
+                        const table = tableWrap ? tableWrap.querySelector("table") : null;
+                        if (!tableWrap || !table) return;
+                        const csv = toDelimitedText(getTableMatrix(table), ",");
+                        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = tableWrap.getAttribute("data-vc-download-name") || "table.csv";
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        URL.revokeObjectURL(url);
+                        return;
+                    }
+
+                    const tableFullscreenButton = event.target.closest("[data-vc-table-fullscreen-target]");
+                    if (tableFullscreenButton) {
+                        const tableId = tableFullscreenButton.getAttribute("data-vc-table-fullscreen-target");
+                        const tableWrap = container.querySelector(`[data-vc-table-wrap="${tableId}"]`);
+                        if (!tableWrap) return;
+                        const fullscreen = tableWrap.getAttribute("data-vc-table-fullscreen") === "true";
+                        tableWrap.setAttribute("data-vc-table-fullscreen", fullscreen ? "false" : "true");
+                        document.body.style.overflow = fullscreen ? "" : "hidden";
+                    }
+                };
+
+                const onKeyDown = (event) => {
+                    if (event.key !== "Escape") return;
+                    const fullscreenCode = container.querySelector('[data-vc-code-fullscreen="true"]');
+                    const fullscreenTable = container.querySelector('[data-vc-table-fullscreen="true"]');
+                    if (fullscreenCode) fullscreenCode.setAttribute("data-vc-code-fullscreen", "false");
+                    if (fullscreenTable) fullscreenTable.setAttribute("data-vc-table-fullscreen", "false");
+                    document.body.style.overflow = "";
+                };
+
+                container.addEventListener("click", onClick);
+                window.addEventListener("keydown", onKeyDown);
+                return () => {
+                    container.removeEventListener("click", onClick);
+                    window.removeEventListener("keydown", onKeyDown);
+                    document.body.style.overflow = "";
+                };
+            }, []);
+
+            const handleSkillUpload = async (event) => {
+                const file = event.target.files && event.target.files[0];
+                if (!file) return;
+                try {
+                    const text = await file.text();
+                    setUploadedSkillName(file.name || "uploaded-skill.md");
+                    setUploadedSkillContent(text);
+                } finally {
+                    event.target.value = "";
+                }
+            };
+
+            const clearUploadedSkill = () => {
+                setUploadedSkillName("");
+                setUploadedSkillContent("");
+                setComparisonSkillInfo(null);
+            };
+
+            const selectAiHistory = (item) => {
+                setActiveAiHistoryId(item.id);
+                setSubmittedPrompt(item.prompt || "");
+                setAiResult(item.result || "");
+                setAiComparisonResult(item.comparisonResult || "");
+                setUploadedSkillName(item.uploadedSkillName || "");
+                setUploadedSkillContent(item.uploadedSkillContent || "");
+                setBaselineSkillInfo(item.baselineSkillInfo || null);
+                setComparisonSkillInfo(item.comparisonSkillInfo || null);
+                setActiveCaseId("ai-generator");
+            };
+
+            const deleteAiHistoryItem = (id) => {
+                setAiHistory((prev) => {
+                    const next = prev.filter((item) => item.id !== id);
+                    if (activeAiHistoryId === id) {
+                        const fallback = next[next.length - 1];
+                        if (fallback) selectAiHistory(fallback);
+                        else {
+                            setActiveAiHistoryId(null);
+                            setSubmittedPrompt("输入 Prompt 后生成双版本对照");
+                            setAiResult("");
+                            setAiComparisonResult("");
+                            setBaselineSkillInfo(null);
+                            setComparisonSkillInfo(null);
+                        }
+                    }
+                    return next;
+                });
+            };
+
+            const clearAiHistory = () => {
+                setAiHistory([]);
+                setActiveAiHistoryId(null);
+                setSubmittedPrompt("输入 Prompt 后生成双版本对照");
+                setAiResult("");
+                setAiComparisonResult("");
+                setBaselineSkillInfo(null);
+                setComparisonSkillInfo(null);
+            };
+
+            const handleGenerate = async (event) => {
+                event.preventDefault();
+                if (!promptInput.trim() || isGenerating) return;
+                const currentPrompt = promptInput.trim();
+                setSubmittedPrompt(currentPrompt);
+                setPromptInput("");
+                setIsGenerating(true);
+                setAiResult("正在生成中...");
+                setAiComparisonResult(uploadedSkillContent ? "正在生成对照结果..." : "");
+                try {
+                    const res = await fetch("/api/generate", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            prompt: currentPrompt,
+                            comparisonSkillContent: uploadedSkillContent,
+                            comparisonSkillName: uploadedSkillName
+                        })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data && data.error ? data.error : "生成失败");
+                    setAiResult(data.baselineResult || "");
+                    setAiComparisonResult(data.comparisonResult || "");
+                    setBaselineSkillInfo(data.baselineSkillInfo || null);
+                    setComparisonSkillInfo(data.comparisonSkillInfo || null);
+                    const record = {
+                        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                        prompt: currentPrompt,
+                        result: data.baselineResult || "",
+                        comparisonResult: data.comparisonResult || "",
+                        uploadedSkillName,
+                        uploadedSkillContent,
+                        baselineSkillInfo: data.baselineSkillInfo || null,
+                        comparisonSkillInfo: data.comparisonSkillInfo || null
+                    };
+                    setAiHistory((prev) => [...prev.slice(-29), record]);
+                    setActiveAiHistoryId(record.id);
+                } catch (err) {
+                    const msg = err && err.message ? err.message : String(err);
+                    setAiResult(`生成失败：${msg}`);
+                    setAiComparisonResult("");
+                } finally {
+                    setIsGenerating(false);
+                }
+            };
+
+            const cases = [
+                { id: "ai-generator", name: "🤖 AI 实时生成" },
+                { id: "table-case", name: "表格规范示例" },
+                { id: "code-case", name: "代码块规范示例" }
+            ];
+
+            const vcMdVars = {
+                "--vc-md-base-size": "16px",
+                "--vc-md-line-height": "1.625",
+                "--vc-md-text": "#1f1f1f",
+                "--vc-md-muted": "#5b5f66",
+                "--vc-md-border": "#dde2ea",
+                "--vc-md-surface-muted": "#f5f7fa",
+                "--vc-md-primary": "#1456d9",
+                "--vc-md-p-space": "0.5rem",
+                "--vc-md-h1-size": "1.375rem",
+                "--vc-md-h1-line": "1.5",
+                "--vc-md-h2-size": "1.25rem",
+                "--vc-md-h2-line": "1.5",
+                "--vc-md-h3-size": "1.125rem",
+                "--vc-md-h3-line": "1.5",
+                "--vc-md-h4-size": "1rem",
+                "--vc-md-h4-line": "1.5"
+            };
+
+            const sampleTableMd = `# 模型竞争力矩阵\n\n| 模型名称 | 知识截止日期 | 多语言支持度 | GSM8K 数学推理得分 | HumanEval 编程得分 |\n| --- | --- | --- | --- | --- |\n| 豆包通用版 | 2025 年 4 月 | 50+ 语言 | 78 | 70 |\n| 豆包 Pro | 2025 年 4 月 | 100+ 语言 | 88 | 82 |`;
+            const sampleCodeMd = `## Python 订单处理示例\n\n\`\`\`python\nclass OrderProcessor:\n    def __init__(self, order_data):\n        self.order_id = order_data.get(\"id\")\n        self.status = order_data.get(\"status\")\n        self.items = order_data.get(\"items\", [])\n\n    def calculate_total(self):\n        return sum(item[\"price\"] * item[\"quantity\"] for item in self.items)\n\`\`\``;
+
+            const renderCase = () => {
+                if (activeCaseId === "table-case") {
+                    return (
+                        <article className="vc-md-root vc-md-flow markdown-body" data-vc-md-scene="chat" style={vcMdVars}>
+                            <div dangerouslySetInnerHTML={{ __html: markdownToHtml(sampleTableMd) }} />
+                        </article>
+                    );
+                }
+                if (activeCaseId === "code-case") {
+                    return (
+                        <article className="vc-md-root vc-md-flow markdown-body" data-vc-md-scene="chat" style={vcMdVars}>
+                            <div dangerouslySetInnerHTML={{ __html: markdownToHtml(sampleCodeMd) }} />
+                        </article>
+                    );
+                }
+                return (
+                    <div className="grid grid-cols-2 gap-6 w-full">
+                        <section className="min-w-0">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="text-sm font-semibold text-slate-900">基准版</div>
+                                <div className="flex items-center gap-2">
+                                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500">当前 Skill</div>
+                                    {baselineSkillInfo && baselineSkillInfo.sha256 ? (
+                                        <div className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-mono text-slate-500">sha:{baselineSkillInfo.sha256}</div>
+                                    ) : null}
+                                </div>
+                            </div>
+                            <article className="vc-md-root markdown-body rounded-2xl border border-slate-200 bg-white p-6 min-h-[280px]" data-vc-md-scope="baseline" data-vc-md-scene="chat" style={vcMdVars}>
+                                {aiResult ? (
+                                    <div dangerouslySetInnerHTML={{ __html: markdownToHtml(aiResult) }} />
+                                ) : (
+                                    <p className="text-sm text-slate-500">输入 Prompt 后，这里展示当前 Skill 的生成效果。</p>
+                                )}
+                            </article>
+                        </section>
+                        <section className="min-w-0">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="text-sm font-semibold text-slate-900">对照版</div>
+                                <div className="flex items-center gap-2">
+                                    {uploadedSkillName ? (
+                                        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs text-indigo-700 max-w-[220px] truncate" title={uploadedSkillName}>{uploadedSkillName}</div>
+                                    ) : (
+                                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs text-slate-400">未上传对照 skill</div>
+                                    )}
+                                    {comparisonSkillInfo && comparisonSkillInfo.sha256 ? (
+                                        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-mono text-indigo-700">sha:{comparisonSkillInfo.sha256}</div>
+                                    ) : null}
+                                </div>
+                            </div>
+                            {comparisonScopedCss ? <style dangerouslySetInnerHTML={{ __html: comparisonScopedCss }} /> : null}
+                            <article className="vc-md-root markdown-body rounded-2xl border border-slate-200 bg-white p-6 min-h-[280px]" data-vc-md-scope="comparison" data-vc-md-scene="chat" style={vcMdVars}>
+                                {aiComparisonResult ? (
+                                    <div dangerouslySetInnerHTML={{ __html: markdownToHtml(aiComparisonResult, comparisonRenderOptions) }} />
+                                ) : (
+                                    <p className="text-sm text-slate-500">上传对照 Skill 后，这里展示对照输出。</p>
+                                )}
+                            </article>
+                        </section>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="flex h-full w-full bg-white overflow-hidden">
+                    <aside className="w-64 border-r border-slate-200 bg-slate-50 flex flex-col shrink-0">
+                        <div className="px-6 py-7 border-b border-slate-200">
+                            <div className="text-4xl font-semibold tracking-tight">Skill Eval</div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                            {cases.map((item) => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setActiveCaseId(item.id)}
+                                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${activeCaseId === item.id ? "bg-indigo-50 text-indigo-700 font-medium" : "text-slate-600 hover:bg-slate-100"}`}
+                                >
+                                    {item.name}
+                                </button>
+                            ))}
+                        </div>
+                    </aside>
+
+                    <main className="flex-1 flex flex-col bg-white overflow-hidden relative">
+                        <div className="absolute top-4 right-4 z-50 group">
+                            <button type="button" aria-label="历史记录" className="relative h-9 pl-3 pr-3 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors inline-flex items-center gap-2 shadow-sm">
+                                <LucideIcon name="history" className="w-4 h-4" />
+                                <span className="text-sm">历史记录</span>
+                                {aiHistory.length ? <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] leading-4 text-center">{aiHistory.length}</span> : null}
+                            </button>
+                            <div className="hidden group-hover:block group-focus-within:block absolute right-0 mt-2 w-96 max-w-[80vw] rounded-xl border border-slate-200 bg-white shadow-lg">
+                                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                                    <div className="text-xs font-medium text-slate-600">历史记录</div>
+                                    <div className="flex items-center gap-3">
+                                        <button type="button" onClick={() => activeAiHistoryId && deleteAiHistoryItem(activeAiHistoryId)} disabled={!activeAiHistoryId} className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-40">删除当前</button>
+                                        <button type="button" onClick={clearAiHistory} className="text-xs text-slate-400 hover:text-slate-600">清空</button>
+                                    </div>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto p-2">
+                                    {aiHistory.length ? aiHistory.slice().reverse().map((item) => (
+                                        <div key={item.id} className={`flex items-center gap-2 rounded-lg px-2 py-1 ${item.id === activeAiHistoryId ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50 text-slate-600"}`}>
+                                            <button type="button" onClick={() => selectAiHistory(item)} className="min-w-0 flex-1 text-left rounded-md px-1 py-1">
+                                                <div className="truncate text-xs">{item.prompt || "(空)"}</div>
+                                                <div className="truncate text-[11px] opacity-70">{item.uploadedSkillName ? `对照：${item.uploadedSkillName}` : "仅当前 Skill"}</div>
+                                            </button>
+                                            <button type="button" onClick={() => deleteAiHistoryItem(item.id)} className="shrink-0 rounded-md p-1 text-slate-400 hover:text-slate-600">
+                                                <LucideIcon name="trash-2" className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    )) : <div className="px-3 py-2 text-xs text-slate-400">暂无历史，发送一次 Prompt 后会记录在这里</div>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 p-12 overflow-y-auto flex justify-center items-start">
+                            <div ref={previewRef} className="flex flex-col gap-6 w-full" style={{ maxWidth: activeCaseId === "ai-generator" ? "1440px" : "768px", padding: "32px 0" }}>
+                                <div className="self-end max-w-[75%] rounded-2xl rounded-tr-sm bg-slate-100 px-4 py-3 text-[15px] leading-6 text-slate-700">
+                                    {activeCaseId === "ai-generator" ? submittedPrompt : (activeCaseId === "table-case" ? "请展示符合 skill 的表格组件。" : "请展示符合 skill 的代码块组件。")}
+                                </div>
+                                {renderCase()}
+                            </div>
+                        </div>
+
+                        {activeCaseId === "ai-generator" ? (
+                            <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-center shrink-0">
+                                <div className="w-full max-w-6xl space-y-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2">
+                                            {uploadedSkillName ? (
+                                                <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs text-indigo-700">
+                                                    <span className="max-w-[260px] truncate" title={uploadedSkillName}>对照：{uploadedSkillName}</span>
+                                                    <button type="button" onClick={clearUploadedSkill} className="text-indigo-500 hover:text-indigo-700">
+                                                        <LucideIcon name="x" className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-1 text-xs text-slate-400">未上传对照 skill</div>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <input ref={skillUploadRef} type="file" accept=".md,.txt,text/markdown,text/plain" onChange={handleSkillUpload} className="hidden" />
+                                            <button type="button" onClick={() => skillUploadRef.current && skillUploadRef.current.click()} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+                                                <LucideIcon name="upload" className="w-4 h-4" />
+                                                上传对照 Skill
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <form onSubmit={handleGenerate} className="flex gap-4 w-full items-center bg-white border border-slate-300 rounded-xl px-4 py-2 shadow-sm focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
+                                        <input
+                                            type="text"
+                                            value={promptInput}
+                                            onChange={(e) => setPromptInput(e.target.value)}
+                                            placeholder="输入 Prompt，同时对比当前 Skill 与上传 Skill 的输出效果..."
+                                            className="flex-1 outline-none border-none text-slate-800 placeholder-slate-400 py-2 bg-transparent"
+                                            disabled={isGenerating}
+                                        />
+                                        <button type="submit" disabled={isGenerating || !promptInput.trim()} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg p-2 disabled:opacity-50 transition-colors flex items-center justify-center">
+                                            {isGenerating ? (
+                                                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                            ) : (
+                                                <LucideIcon name="send" className="w-5 h-5" />
+                                            )}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        ) : null}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
+        );
+    </script>
+</body>
+</html>

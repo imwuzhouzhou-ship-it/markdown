@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VC-Markdown Agent Page</title>
+    <link rel="stylesheet" href="/vc-markdown/markdown.css" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        background: #ffffff;
+        color: #0c0d0e;
+        font-family: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Helvetica, Arial,
+          sans-serif;
+      }
+
+      .app-shell {
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid #dde2ea;
+        background: #fafbfc;
+      }
+
+      .topbar-title {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .topbar-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        color: #5b5f66;
+      }
+
+      .topbar-controls select {
+        border: 1px solid #dde2ea;
+        border-radius: 8px;
+        padding: 6px 8px;
+        background: #ffffff;
+        color: inherit;
+        font-size: 12px;
+      }
+
+      .topbar-controls button {
+        border: 1px solid #dde2ea;
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: #ffffff;
+        color: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .topbar-controls button:hover {
+        color: #0c0d0e;
+        border-color: #cfd6e3;
+      }
+
+      .thread {
+        overflow: auto;
+        padding: 16px;
+        display: flex;
+        justify-content: center;
+        background: #ffffff;
+      }
+
+      .thread-inner {
+        width: 100%;
+        max-width: 768px;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        padding-bottom: 16px;
+      }
+
+      .composer {
+        border-top: 1px solid #dde2ea;
+        background: #fafbfc;
+        padding: 14px 16px;
+        display: flex;
+        justify-content: center;
+      }
+
+      .composer form {
+        width: min(100%, 860px);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .composer input[type="text"] {
+        flex: 1 1 auto;
+        border: 1px solid #dde2ea;
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 14px;
+        outline: none;
+        background: #ffffff;
+      }
+
+      .composer button {
+        flex: 0 0 auto;
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: #1456d9;
+        color: #ffffff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      .composer button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      /* Keep lucide icons compact inside action buttons */
+      .vc-md-code-actions svg,
+      .vc-md-table-actions svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .agent-row {
+        display: flex;
+        align-items: flex-start;
+        padding-bottom: 16px;
+      }
+
+      .user-row {
+        display: flex;
+        justify-content: flex-end;
+        padding-bottom: 16px;
+      }
+
+      .system-row,
+      .error-row,
+      .loading-row {
+        padding-bottom: 16px;
+      }
+
+      .agent-avatar {
+        display: none;
+      }
+
+      .history-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.38);
+        display: none;
+        z-index: 1000;
+      }
+
+      .history-overlay[data-open="true"] {
+        display: block;
+      }
+
+      .history-panel {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: min(420px, calc(100vw - 32px));
+        height: 100%;
+        background: #ffffff;
+        border-left: 1px solid #dde2ea;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .history-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 12px;
+        border-bottom: 1px solid #dde2ea;
+        background: #fafbfc;
+      }
+
+      .history-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #0c0d0e;
+      }
+
+      .history-close {
+        border: 1px solid #dde2ea;
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: #ffffff;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .history-list {
+        padding: 12px;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .history-item {
+        border: 1px solid #dde2ea;
+        border-radius: 12px;
+        padding: 10px 10px;
+        background: #ffffff;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .history-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 11px;
+        color: #5b5f66;
+      }
+
+      .history-prompt {
+        font-size: 13px;
+        color: #0c0d0e;
+        line-height: 18px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .history-actions {
+        display: inline-flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .history-actions button {
+        border: 1px solid #dde2ea;
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: #ffffff;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .history-actions button[data-variant="danger"] {
+        border-color: #fecaca;
+        color: #dc2626;
+        background: #fef2f2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-title">Agent Chat Page (vc-markdown)</div>
+        <div class="topbar-controls">
+          <button id="historyBtn" type="button">历史</button>
+          <label>
+            展示
+            <select id="layoutSelect">
+              <option value="card" selected>card-680</option>
+              <option value="flow">flow-768</option>
+            </select>
+          </label>
+          <label>
+            场景
+            <select id="sceneSelect">
+              <option value="chat" selected>chat</option>
+              <option value="drawer">drawer</option>
+              <option value="ide">ide</option>
+            </select>
+          </label>
+        </div>
+      </header>
+
+      <main class="thread">
+        <div class="thread-inner" id="thread" aria-label="Chat thread"></div>
+      </main>
+
+      <footer class="composer">
+        <form id="composerForm" autocomplete="off">
+          <input
+            id="composerInput"
+            type="text"
+            placeholder="输入一句话，生成一条示例回复（包含 code/table 的 vc-markdown 结构）"
+          />
+          <button id="sendBtn" type="submit">发送</button>
+        </form>
+      </footer>
+    </div>
+
+    <div class="history-overlay" id="historyOverlay" data-open="false" aria-hidden="true">
+      <aside class="history-panel" role="dialog" aria-label="历史记录">
+        <div class="history-head">
+          <div class="history-title">历史记录</div>
+          <button class="history-close" id="historyCloseBtn" type="button">关闭</button>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </aside>
+    </div>
+
+    <script src="https://unpkg.com/marked@4.3.0/marked.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/core.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/languages/javascript.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/languages/typescript.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/languages/json.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/languages/bash.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/languages/css.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/languages/xml.min.js"></script>
+    <script src="https://unpkg.com/highlight.js@11.9.0/lib/languages/markdown.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
